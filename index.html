@@ -1,0 +1,204 @@
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Smart Pattern Simulator</title>
+
+  <style>
+    body {
+      background: #0b0b0b;
+      color: white;
+      font-family: Arial;
+      text-align: center;
+    }
+
+    input, button {
+      padding: 10px;
+      margin: 6px;
+      font-size: 14px;
+    }
+
+    .range { font-weight: bold; color: #00ff88; }
+    .low { color: #00bfff; }
+    .med { color: #a020f0; }
+    .high { color: #ff4da6; }
+  </style>
+</head>
+
+<body>
+
+<h2>📊 Smart Pattern Simulator</h2>
+
+<p>Uses recent 20-min data for smarter predictions</p>
+
+<input type="text" id="time" placeholder="HH:MM:SS">
+<input type="number" id="spike" placeholder="Spike (e.g. 2.3)" step="0.01">
+
+<br>
+<button onclick="generate()">Generate</button>
+
+<div id="result"></div>
+
+<script>
+
+// ---------- LOAD HISTORY ----------
+let history = JSON.parse(localStorage.getItem("history")) || [];
+
+// ---------- CLEAN OLD DATA ----------
+function cleanOldData(){
+  let now = Date.now();
+  let limit = 20 * 60 * 1000;
+
+  history = history.filter(item => (now - item.ts) <= limit);
+}
+
+// run immediately
+cleanOldData();
+
+// run every minute
+setInterval(() => {
+  cleanOldData();
+  localStorage.setItem("history", JSON.stringify(history));
+}, 60000);
+
+// ---------- LOG DATA ----------
+function logData(time, spike){
+  history.push({
+    time: time,
+    spike: spike,
+    ts: Date.now()
+  });
+
+  cleanOldData();
+  localStorage.setItem("history", JSON.stringify(history));
+}
+
+// ---------- HELPERS ----------
+function parseTime(t){
+  let [h,m,s] = t.split(":").map(Number);
+  return {h,m,s};
+}
+
+function format(h,m,s){
+  if(s >= 60){ m += Math.floor(s/60); s%=60; }
+  if(m >= 60){ h += Math.floor(m/60); m%=60; }
+
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+// ---------- AVERAGE ----------
+function getAverageSpike(){
+  if(history.length === 0) return 0;
+  let sum = history.reduce((a,b)=>a+b.spike,0);
+  return sum / history.length;
+}
+
+// ---------- VOL ----------
+function getVol(spike){
+  if(spike < 2) return "low";
+  if(spike < 5) return "med";
+  return "high";
+}
+
+// ---------- DECAY ----------
+function decayVol(base, step){
+  const map = {
+    high: ["high","med","med","low","low"],
+    med:  ["med","med","low","low","low"],
+    low:  ["low","low","low","low","low"]
+  };
+  return map[base][step-1];
+}
+
+// ---------- RANGE ----------
+function makeRange(vol, prevMax){
+
+  let min, max;
+
+  if(vol === "low"){
+    min = 1 + Math.random()*1.5;
+    max = min + (1 + Math.random()*2);
+  }
+
+  if(vol === "med"){
+    min = 2 + Math.random()*2;
+    max = min + (3 + Math.random()*5);
+  }
+
+  if(vol === "high"){
+    min = 5 + Math.random()*6;
+    max = min + (10 + Math.random()*25);
+  }
+
+  if(prevMax){
+    max = (max + prevMax)/2;
+  }
+
+  return {
+    text: `${min.toFixed(1)}x – ${max.toFixed(1)}x`,
+    max: max
+  };
+}
+
+// ---------- MAIN ----------
+function generate(){
+
+  let t = document.getElementById("time").value;
+  let s = parseFloat(document.getElementById("spike").value);
+
+  if(!t || isNaN(s)){
+    alert("Enter valid inputs");
+    return;
+  }
+
+  // log current data
+  logData(t, s);
+
+  let avg = getAverageSpike();
+  let combined = (s + avg) / 2;
+
+  let baseVol = getVol(combined);
+  let time = parseTime(t);
+
+  let output = [];
+  let prevMax = null;
+
+  for(let i=1;i<=5;i++){
+
+    let vol = decayVol(baseVol, i);
+
+    let drift = Math.floor(Math.random()*30);
+    let totalSec = (time.m*60 + time.s) + (i*120) + drift;
+
+    let h = time.h;
+    let m = Math.floor(totalSec/60);
+    let sec = totalSec % 60;
+
+    let start = format(h,m,sec);
+    let end = format(h, m+2, sec);
+
+    let rangeObj = makeRange(vol, prevMax);
+    prevMax = rangeObj.max;
+
+    output.push(`
+      <p class="${vol}">
+        Window ${i}: <span class="range">${rangeObj.text}</span><br>
+        ${start} – ${end}
+      </p>
+    `);
+  }
+
+  document.getElementById("result").innerHTML = `
+    <h3>📡 Smart Windows</h3>
+    <p>Volatility: <b>${baseVol.toUpperCase()}</b></p>
+    <p>Avg Spike (20min): <b>${avg.toFixed(2)}</b></p>
+    <p>Active Data Points: <b>${history.length}</b></p>
+    ${output.join("")}
+  `;
+}
+
+</script>
+
+</body>
+</html>
+```
